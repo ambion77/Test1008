@@ -1,1 +1,25 @@
-
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>역사 지구본</title>
+<style>
+  :root { --sea:#0f2a44; --globe:#1d5c7a; --line:#3f86a3; --gold:#e8b64c; --ink:#eaf2f6; }
+  html, body { margin:0; height:100%; background:var(--sea); color:var(--ink);
+    font-family: "Noto Serif KR", serif; overflow:hidden; }
+  body { display:flex; flex-direction:column; padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px); box-sizing:border-box; }
+  h1 { font-size:1.4rem; font-weight:600; margin:1rem 1.25rem .25rem; }
+  p.hint { margin:0 1.25rem; opacity:.7; font-size:.9rem; }
+  canvas { flex:1; width:100%; touch-action:none; }
+  #card { margin:0 1rem 1rem; padding:1rem 1.1rem; border-left:4px solid var(--gold);
+    background:rgba(255,255,255,.06); min-height:4.5rem; line-height:1.6; }
+  #card b { color:var(--gold); }
+</style>
+</head>
+<body>
+  <h1>역사 지구본</h1>
+  <p class="hint">드래그해서 돌리고, 금색 점을 눌러 보세요.</p>
+  <canvas id="c"></canvas>
+  <div id="card">사건을 고르면 여기에 설명이 나와요.</div>
