@@ -23,3 +23,78 @@
   <p class="hint">드래그해서 돌리고, 금색 점을 눌러 보세요.</p>
   <canvas id="c"></canvas>
   <div id="card">사건을 고르면 여기에 설명이 나와요.</div>
+<script>
+const events = [
+  { name:"로마 건국", year:"기원전 753년", lat:41.9, lon:12.5 },
+  { name:"고조선 건국(전승)", year:"기원전 2333년", lat:39.0, lon:125.7 },
+  { name:"훈민정음 반포", year:"1446년", lat:37.57, lon:126.98 },
+  { name:"피라미드 건설", year:"기원전 2560년경", lat:29.98, lon:31.13 },
+  { name:"콜럼버스 아메리카 도착", year:"1492년", lat:24.1, lon:-74.5 },
+  { name:"프랑스 혁명", year:"1789년", lat:48.86, lon:2.35 },
+  { name:"마추픽추 건설", year:"1450년경", lat:-13.16, lon:-72.55 }
+];
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const card = document.getElementById('card');
+let rotLon = -100, rotLat = 20, R, cx, cy, dragging = false, lastX, lastY, moved = 0;
+const rad = d => d * Math.PI / 180;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  cx = c.clientWidth/2; cy = c.clientHeight/2;
+  R = Math.min(cx, cy) * 0.85;
+  draw();
+}
+function project(lat, lon) {
+  const φ = rad(lat), λ = rad(lon + rotLon), φ0 = rad(rotLat);
+  const x = Math.cos(φ) * Math.sin(λ);
+  const y = Math.cos(φ0)*Math.sin(φ) - Math.sin(φ0)*Math.cos(φ)*Math.cos(λ);
+  const z = Math.sin(φ0)*Math.sin(φ) + Math.cos(φ0)*Math.cos(φ)*Math.cos(λ);
+  return { x: cx + R*x, y: cy - R*y, visible: z > 0 };
+}
+function draw() {
+  ctx.clearRect(0,0,c.clientWidth,c.clientHeight);
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--globe');
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#3f86a3'; ctx.lineWidth = 0.7;
+  for (let lon = -180; lon < 180; lon += 30) line(l => [l, lon], -90, 90);
+  for (let lat = -60; lat <= 60; lat += 30) line(l => [lat, l], -180, 180);
+  for (const e of events) {
+    const p = project(e.lat, e.lon); e.p = p;
+    if (!p.visible) continue;
+    ctx.fillStyle = '#e8b64c';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI*2); ctx.fill();
+  }
+}
+function line(f, a, b) {
+  ctx.beginPath(); let pen = false;
+  for (let t = a; t <= b; t += 3) {
+    const [lat, lon] = f(t), p = project(lat, lon);
+    if (p.visible) { pen ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y); pen = true; }
+    else pen = false;
+  }
+  ctx.stroke();
+}
+c.addEventListener('pointerdown', e => { dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  rotLon += dx * 0.4; rotLat = Math.max(-80, Math.min(80, rotLat + dy * 0.4));
+  lastX = e.clientX; lastY = e.clientY; draw();
+});
+window.addEventListener('pointerup', e => {
+  if (dragging && moved < 6) pick(e);
+  dragging = false;
+});
+function pick(e) {
+  const r = c.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const hit = events.find(ev => ev.p.visible && Math.hypot(ev.p.x - x, ev.p.y - y) < 18);
+  if (hit) card.innerHTML = `<b>${hit.year}</b><br>${hit.name}`;
+}
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>
