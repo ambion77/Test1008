@@ -2,99 +2,427 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>역사 지구본</title>
 <style>
-  :root { --sea:#0f2a44; --globe:#1d5c7a; --line:#3f86a3; --gold:#e8b64c; --ink:#eaf2f6; }
-  html, body { margin:0; height:100%; background:var(--sea); color:var(--ink);
-    font-family: "Noto Serif KR", serif; overflow:hidden; }
-  body { display:flex; flex-direction:column; padding-top:env(safe-area-inset-top,0px);
-    padding-bottom:env(safe-area-inset-bottom,0px); box-sizing:border-box; }
-  h1 { font-size:1.4rem; font-weight:600; margin:1rem 1.25rem .25rem; }
-  p.hint { margin:0 1.25rem; opacity:.7; font-size:.9rem; }
-  canvas { flex:1; width:100%; touch-action:none; }
-  #card { margin:0 1rem 1rem; padding:1rem 1.1rem; border-left:4px solid var(--gold);
-    background:rgba(255,255,255,.06); min-height:4.5rem; line-height:1.6; }
-  #card b { color:var(--gold); }
+  :root { --ink:#eef4f8; --dim:#9fb3c2; --panel:rgba(10,22,38,.78); --accent:#f2b84b; }
+  html, body { margin:0; height:100%; background:#02060d; color:var(--ink); overflow:hidden;
+    font-family:"Noto Serif KR","Nanum Myeongjo",serif; -webkit-tap-highlight-color:transparent; }
+  canvas#scene { position:fixed; inset:0; width:100%; height:100%; touch-action:none; display:block; }
+  header { position:fixed; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 0;
+    pointer-events:none; }
+  header h1 { margin:0; font-size:1.25rem; font-weight:600; letter-spacing:.02em; }
+  header p { margin:.2rem 0 0; color:var(--dim); font-size:.82rem; font-family:sans-serif; }
+  #bottom { position:fixed; left:0; right:0; bottom:0; padding:0 14px calc(env(safe-area-inset-bottom,0px) + 14px); }
+  #card { background:var(--panel); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-radius:16px; padding:14px 16px 16px; margin-bottom:10px; border-top:3px solid var(--accent);
+    transform:translateY(130%); opacity:0; transition:transform .55s cubic-bezier(.2,.9,.25,1.15), opacity .4s; }
+  #card.show { transform:none; opacity:1; }
+  #year { font-size:2rem; font-weight:700; color:var(--accent); line-height:1.1; font-variant-numeric:tabular-nums; }
+  #name { font-size:1.15rem; font-weight:600; margin-top:2px; }
+  #place { color:var(--dim); font-size:.8rem; font-family:sans-serif; margin-top:2px; }
+  #desc { font-size:.92rem; line-height:1.65; margin:8px 0 0; }
+  #dots { display:flex; justify-content:center; gap:7px; margin-bottom:10px; }
+  #dots span { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.25); transition:all .3s; }
+  #dots span.on { background:var(--accent); transform:scale(1.5); }
+  #controls { display:flex; gap:8px; }
+  #controls button { flex:1; border:0; border-radius:12px; padding:13px 0; font-size:.95rem;
+    font-family:sans-serif; color:var(--ink); background:rgba(255,255,255,.1); }
+  #controls button#play { flex:1.6; background:var(--accent); color:#1b1204; font-weight:700; }
+  #controls button:active { transform:scale(.96); }
+  #loading { position:fixed; inset:0; display:grid; place-items:center; color:var(--dim); font-family:sans-serif;
+    transition:opacity .8s; }
 </style>
 </head>
 <body>
+<canvas id="scene"></canvas>
+<div id="loading">지구를 그리는 중…</div>
+<header>
   <h1>역사 지구본</h1>
-  <p class="hint">드래그해서 돌리고, 금색 점을 눌러 보세요.</p>
-  <canvas id="c"></canvas>
-  <div id="card">사건을 고르면 여기에 설명이 나와요.</div>
-<script>
-const events = [
-  { name:"로마 건국", year:"기원전 753년", lat:41.9, lon:12.5 },
-  { name:"고조선 건국(전승)", year:"기원전 2333년", lat:39.0, lon:125.7 },
-  { name:"훈민정음 반포", year:"1446년", lat:37.57, lon:126.98 },
-  { name:"피라미드 건설", year:"기원전 2560년경", lat:29.98, lon:31.13 },
-  { name:"콜럼버스 아메리카 도착", year:"1492년", lat:24.1, lon:-74.5 },
-  { name:"프랑스 혁명", year:"1789년", lat:48.86, lon:2.35 },
-  { name:"마추픽추 건설", year:"1450년경", lat:-13.16, lon:-72.55 }
-];
-const c = document.getElementById('c'), ctx = c.getContext('2d');
-const card = document.getElementById('card');
-let rotLon = -100, rotLat = 20, R, cx, cy, dragging = false, lastX, lastY, moved = 0;
-const rad = d => d * Math.PI / 180;
+  <p>돌리고, 확대하고, 빛나는 점을 눌러 보세요</p>
+</header>
+<div id="bottom">
+  <div id="card"><div id="year"></div><div id="name"></div><div id="place"></div><p id="desc"></p></div>
+  <div id="dots"></div>
+  <div id="controls">
+    <button id="prev">이전</button>
+    <button id="play">역사 여행 시작</button>
+    <button id="next">다음</button>
+  </div>
+</div>
 
-function resize() {
-  const dpr = window.devicePixelRatio || 1;
-  c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  cx = c.clientWidth/2; cy = c.clientHeight/2;
-  R = Math.min(cx, cy) * 0.85;
-  draw();
-}
-function project(lat, lon) {
-  const φ = rad(lat), λ = rad(lon + rotLon), φ0 = rad(rotLat);
-  const x = Math.cos(φ) * Math.sin(λ);
-  const y = Math.cos(φ0)*Math.sin(φ) - Math.sin(φ0)*Math.cos(φ)*Math.cos(λ);
-  const z = Math.sin(φ0)*Math.sin(φ) + Math.cos(φ0)*Math.cos(φ)*Math.cos(λ);
-  return { x: cx + R*x, y: cy - R*y, visible: z > 0 };
-}
-function draw() {
-  ctx.clearRect(0,0,c.clientWidth,c.clientHeight);
-  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--globe');
-  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle = '#3f86a3'; ctx.lineWidth = 0.7;
-  for (let lon = -180; lon < 180; lon += 30) line(l => [l, lon], -90, 90);
-  for (let lat = -60; lat <= 60; lat += 30) line(l => [lat, l], -180, 180);
-  for (const e of events) {
-    const p = project(e.lat, e.lon); e.p = p;
-    if (!p.visible) continue;
-    ctx.fillStyle = '#e8b64c';
-    ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI*2); ctx.fill();
+<script src="lib/d3.min.js"></script>
+<script src="lib/topojson-client.min.js"></script>
+<script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- 역사 이벤트 (연도 순) ----------
+const EVENTS = [
+  { y:-2560, name:"기자의 대피라미드", place:"이집트 기자", lat:29.98, lon:31.13, desc:"쿠푸 왕의 무덤으로 지어진 피라미드. 약 3,800년 동안 세계에서 가장 높은 건축물이었어요." },
+  { y:-2333, name:"고조선 건국", place:"한반도 북부·요동", lat:39.02, lon:125.75, desc:"단군왕검이 세웠다고 전해지는 우리 역사 최초의 나라예요. (건국 연대는 전승)" },
+  { y:-753, name:"로마 건국", place:"이탈리아 로마", lat:41.89, lon:12.49, desc:"전설에 따르면 로물루스가 세운 작은 도시가 훗날 지중해 전체를 다스리는 제국이 되었어요." },
+  { y:-221, name:"진시황의 중국 통일", place:"중국 셴양", lat:34.33, lon:108.71, desc:"진나라가 여섯 나라를 정복하고 처음으로 중국을 하나로 묶었어요. 문자·화폐·도량형도 통일했죠." },
+  { y:-37, name:"고구려 건국", place:"졸본 (중국 환런)", lat:41.27, lon:125.36, desc:"주몽이 졸본에서 세운 나라로, 훗날 동북아시아의 강대국으로 성장했어요." },
+  { y:1446, name:"훈민정음 반포", place:"조선 한양", lat:37.57, lon:126.98, desc:"세종대왕이 백성을 위해 만든 글자를 세상에 알렸어요. 오늘날의 한글이에요." },
+  { y:1450, name:"마추픽추 건설", place:"페루 안데스산맥", lat:-13.16, lon:-72.55, desc:"잉카 제국이 해발 2,400m 산꼭대기에 세운 도시. 스페인 정복자들에게 발견되지 않았어요." },
+  { y:1492, name:"콜럼버스, 아메리카 도착", place:"바하마 제도", lat:24.06, lon:-74.53, desc:"대서양을 건넌 항해가 유럽과 아메리카 대륙을 잇는 시대를 열었어요." },
+  { y:1776, name:"미국 독립 선언", place:"미국 필라델피아", lat:39.95, lon:-75.15, desc:"13개 식민지가 영국으로부터 독립을 선언하며 새로운 나라가 탄생했어요." },
+  { y:1789, name:"프랑스 혁명", place:"프랑스 파리", lat:48.86, lon:2.35, desc:"바스티유 감옥 습격으로 시작된 혁명이 자유·평등의 이념을 세계로 퍼뜨렸어요." },
+  { y:1969, name:"아폴로 11호 발사", place:"미국 케네디 우주센터", lat:28.57, lon:-80.65, desc:"이곳을 떠난 우주선이 인류를 처음으로 달에 내려놓았어요." }
+];
+const eraColor = y => y < 0 ? 0xf2b84b : y < 1700 ? 0x5fe0cf : 0xff7d6b;
+const eraCss = y => '#' + eraColor(y).toString(16).padStart(6, '0');
+const fmtYear = y => (y < 0 ? '기원전 ' + Math.abs(Math.round(y)) : Math.round(y)) + '년';
+
+// ---------- 기본 장면 ----------
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
+camera.position.set(0, 0, 14);
+scene.add(camera);
+
+const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+sun.position.set(-4, 3, 5);
+camera.add(sun);               // 빛이 항상 보는 쪽을 비추도록 카메라에 붙임
+scene.add(new THREE.AmbientLight(0x6688aa, 0.55));
+
+// 별
+{
+  const n = 2500, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(60 + Math.random() * 40);
+    pos.set([v.x, v.y, v.z], i * 3);
   }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xffffff, size:0.18, sizeAttenuation:true, transparent:true, opacity:.8 })));
 }
-function line(f, a, b) {
-  ctx.beginPath(); let pen = false;
-  for (let t = a; t <= b; t += 3) {
-    const [lat, lon] = f(t), p = project(lat, lon);
-    if (p.visible) { pen ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y); pen = true; }
-    else pen = false;
+
+const globe = new THREE.Group();
+scene.add(globe);
+const R = 1;
+
+// 위도/경도 → 3D 좌표 (three.js 구 UV와 일치)
+function toVec(lat, lon, r = R) {
+  const a = THREE.MathUtils.degToRad(lat), o = THREE.MathUtils.degToRad(lon);
+  return new THREE.Vector3(Math.cos(a) * Math.cos(o), Math.sin(a), -Math.cos(a) * Math.sin(o)).multiplyScalar(r);
+}
+
+// ---------- 지구 텍스처 만들기 (오프라인, 지도 데이터로 직접 그림) ----------
+async function buildEarth() {
+  const topo = await (await fetch('lib/land-50m.json')).json();
+  const land = topojson.feature(topo, topo.objects.land);
+  const W = 4096, H = 2048;
+  const proj = d3.geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, H / 2]);
+
+  // 색상 지도
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const path = d3.geoPath(proj, g);
+  const ocean = g.createLinearGradient(0, 0, 0, H);
+  ocean.addColorStop(0, '#0b2a4a'); ocean.addColorStop(.5, '#0e4a78'); ocean.addColorStop(1, '#0b2a4a');
+  g.fillStyle = ocean; g.fillRect(0, 0, W, H);
+  // 얕은 바다 (해안선 주변 밝은 띠)
+  g.save(); g.strokeStyle = 'rgba(70,160,200,.35)'; g.lineWidth = 14; g.filter = 'blur(6px)';
+  g.beginPath(); path(land); g.stroke(); g.restore();
+  // 육지: 위도에 따라 색이 변하는 그라데이션으로 채움
+  g.save(); g.beginPath(); path(land); g.clip();
+  const lg = g.createLinearGradient(0, 0, 0, H);
+  [[0,'#f4f7f8'],[.09,'#e8ecec'],[.17,'#8a8f6a'],[.25,'#4f6e3a'],[.33,'#5e7a3e'],
+   [.38,'#b49a62'],[.43,'#c9a86a'],[.48,'#3f6b2c'],[.52,'#2f5e26'],[.57,'#3f6b2c'],
+   [.62,'#b8975e'],[.68,'#7f8a4c'],[.78,'#5c6d48'],[.86,'#dfe5e6'],[1,'#f4f7f8']]
+   .forEach(([s, col]) => lg.addColorStop(s, col));
+  g.fillStyle = lg; g.fillRect(0, 0, W, H);
+  // 지형 느낌의 얼룩
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = `rgba(${Math.random() < .5 ? '0,0,0' : '255,240,210'},${Math.random() * .08})`;
+    const r = 4 + Math.random() * 22;
+    g.beginPath(); g.arc(Math.random() * W, Math.random() * H, r, 0, 7); g.fill();
   }
-  ctx.stroke();
+  g.restore();
+  g.strokeStyle = 'rgba(20,30,20,.35)'; g.lineWidth = 1.2; g.beginPath(); path(land); g.stroke();
+
+  // 반사 지도: 바다만 반짝이게
+  const s = document.createElement('canvas'); s.width = W / 2; s.height = H / 2;
+  const sg = s.getContext('2d');
+  const sp = d3.geoPath(d3.geoEquirectangular().scale(W / 4 / Math.PI).translate([W / 4, H / 4]), sg);
+  sg.fillStyle = '#9a9a9a'; sg.fillRect(0, 0, s.width, s.height);
+  sg.fillStyle = '#000'; sg.beginPath(); sp(land); sg.fill();
+
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(R, 128, 64),
+    new THREE.MeshPhongMaterial({ map, specularMap:new THREE.CanvasTexture(s), specular:0x557799, shininess:22 })
+  );
+  globe.add(earth);
+  return earth;
 }
-c.addEventListener('pointerdown', e => { dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY; });
-window.addEventListener('pointermove', e => {
-  if (!dragging) return;
-  const dx = e.clientX - lastX, dy = e.clientY - lastY;
-  moved += Math.abs(dx) + Math.abs(dy);
-  rotLon += dx * 0.4; rotLat = Math.max(-80, Math.min(80, rotLat + dy * 0.4));
-  lastX = e.clientX; lastY = e.clientY; draw();
+
+// 구름 (절차적으로 생성)
+function buildClouds() {
+  const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 260; i++) {
+    const x = Math.random() * W, y = H * (.15 + .7 * Math.random()), r = 10 + Math.random() * 45;
+    const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, 'rgba(255,255,255,.45)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = rg; g.beginPath(); g.ellipse(x, y, r * 2.2, r, 0, 0, 7); g.fill();
+  }
+  const m = new THREE.Mesh(new THREE.SphereGeometry(R * 1.012, 96, 48),
+    new THREE.MeshLambertMaterial({ map:new THREE.CanvasTexture(c), transparent:true, opacity:.55, depthWrite:false }));
+  globe.add(m);
+  return m;
+}
+
+// 대기 빛 (가장자리 발광)
+function buildAtmosphere() {
+  const mat = new THREE.ShaderMaterial({
+    vertexShader:`varying vec3 vN; varying vec3 vV;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position,1.); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv; }`,
+    fragmentShader:`varying vec3 vN; varying vec3 vV;
+      void main(){ float f = pow(1. - abs(dot(vN, vV)), 2.6); gl_FragColor = vec4(0.35,0.65,1.0,1.0) * f * 1.4; }`,
+    blending:THREE.AdditiveBlending, side:THREE.BackSide, transparent:true, depthWrite:false
+  });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(R * 1.16, 64, 32), mat));
+}
+
+// ---------- 마커와 애니메이션 ----------
+function glowTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), rg = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(.25, 'rgba(255,255,255,.7)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+const GLOW = glowTexture();
+const markers = [];
+const hitTargets = [];
+
+function buildMarkers() {
+  EVENTS.forEach((ev, i) => {
+    const col = eraColor(ev.y);
+    const base = toVec(ev.lat, ev.lon);
+    const holder = new THREE.Object3D();
+    holder.position.copy(base);
+    holder.lookAt(base.clone().multiplyScalar(2));      // z축이 바깥을 향함
+    globe.add(holder);
+
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map:GLOW, color:col, blending:THREE.AdditiveBlending, depthWrite:false }));
+    dot.scale.setScalar(.07); dot.position.z = .004; holder.add(dot);
+
+    const rings = [0, 1].map(k => {
+      const r = new THREE.Mesh(new THREE.RingGeometry(.9, 1, 48),
+        new THREE.MeshBasicMaterial({ color:col, transparent:true, side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending }));
+      r.position.z = .003; holder.add(r); r.userData.offset = k * .5; return r;
+    });
+
+    const beamGeo = new THREE.CylinderGeometry(.004, .012, 1, 12, 1, true);
+    beamGeo.rotateX(Math.PI / 2); beamGeo.translate(0, 0, .5);
+    const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color:col, transparent:true, opacity:.85, blending:THREE.AdditiveBlending, depthWrite:false }));
+    beam.scale.set(1, 1, .0001); holder.add(beam);
+
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(.07, 8, 8), new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false }));
+    hit.userData.index = i; holder.add(hit); hitTargets.push(hit);
+
+    markers.push({ ev, holder, dot, rings, beam, phase:Math.random(), beamH:0 });
+  });
+}
+
+// 이전 사건 → 다음 사건을 잇는 빛의 궤적
+const ARC_N = 120;
+const arcGeo = new THREE.BufferGeometry();
+arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_N * 3), 3));
+const arcLine = new THREE.Line(arcGeo, new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:.9, blending:THREE.AdditiveBlending }));
+arcLine.visible = false; globe.add(arcLine);
+const comet = new THREE.Sprite(new THREE.SpriteMaterial({ map:GLOW, color:0xffffff, blending:THREE.AdditiveBlending, depthWrite:false }));
+comet.scale.setScalar(.09); comet.visible = false; globe.add(comet);
+let arc = null;
+
+function startArc(from, to) {
+  const a = toVec(from.lat, from.lon).normalize(), b = toVec(to.lat, to.lon).normalize();
+  const angle = a.angleTo(b), lift = .08 + angle * .12;
+  const pts = arcGeo.attributes.position, q = new THREE.Quaternion(), full = new THREE.Quaternion().setFromUnitVectors(a, b);
+  for (let i = 0; i < ARC_N; i++) {
+    const t = i / (ARC_N - 1);
+    q.identity().slerp(full, t);
+    const v = a.clone().applyQuaternion(q).multiplyScalar(R * (1.005 + Math.sin(Math.PI * t) * lift));
+    pts.setXYZ(i, v.x, v.y, v.z);
+  }
+  pts.needsUpdate = true;
+  arcLine.material.color.set(eraColor(to.y));
+  arcLine.visible = comet.visible = true;
+  arc = { t:0, dur:1.6 };
+}
+
+// ---------- 회전·확대 조작 ----------
+let rotX = .35, rotY = 0, velX = 0, velY = 0, targetRot = null;
+let zoom = 3.6, targetZoom = 3.6;
+const pointers = new Map();
+let pinchDist = 0, downAt = null, lastInteract = 0;
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  downAt = { x:e.clientX, y:e.clientY, t:performance.now() };
+  targetRot = null; lastInteract = performance.now(); stopTour();
+  if (pointers.size === 2) { const [p, q] = [...pointers.values()]; pinchDist = Math.hypot(p.x - q.x, p.y - q.y); }
 });
-window.addEventListener('pointerup', e => {
-  if (dragging && moved < 6) pick(e);
-  dragging = false;
+canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId), cur = { x:e.clientX, y:e.clientY };
+  pointers.set(e.pointerId, cur);
+  if (pointers.size === 2) {
+    const [p, q] = [...pointers.values()], d = Math.hypot(p.x - q.x, p.y - q.y);
+    targetZoom = THREE.MathUtils.clamp(targetZoom * pinchDist / d, 1.7, 7); pinchDist = d;
+  } else {
+    const k = .005 * zoom / 3.6;
+    velY = (cur.x - prev.x) * k; velX = (cur.y - prev.y) * k;
+    rotY += velY; rotX = THREE.MathUtils.clamp(rotX + velX, -1.3, 1.3);
+  }
+  lastInteract = performance.now();
 });
+const endPointer = e => {
+  pointers.delete(e.pointerId);
+  if (downAt && pointers.size === 0 && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 8 && performance.now() - downAt.t < 400) pick(e);
+  downAt = null;
+};
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', e => { targetZoom = THREE.MathUtils.clamp(targetZoom * (1 + e.deltaY * .001), 1.7, 7); }, { passive:true });
+
+const raycaster = new THREE.Raycaster();
+let earthMesh;
 function pick(e) {
-  const r = c.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  const hit = events.find(ev => ev.p.visible && Math.hypot(ev.p.x - x, ev.p.y - y) < 18);
-  if (hit) card.innerHTML = `<b>${hit.year}</b><br>${hit.name}`;
+  const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects([earthMesh, ...hitTargets], false);
+  const earthHit = hits.find(h => h.object === earthMesh);
+  // 지구 뒤편에 가려진 마커는 무시하고, 앞면 마커만 선택
+  const m = hits.find(h => h.object !== earthMesh && (!earthHit || h.distance <= earthHit.distance + .05));
+  if (m) { stopTour(); select(m.object.userData.index, true); }
 }
-window.addEventListener('resize', resize);
-resize();
+
+// ---------- 선택과 카드 ----------
+let current = -1, shownYear = EVENTS[0].y;
+const card = document.getElementById('card'), yearEl = document.getElementById('year');
+const dotsEl = document.getElementById('dots');
+EVENTS.forEach(() => dotsEl.appendChild(document.createElement('span')));
+let yearAnim = null;
+
+function select(i, fromTap = false) {
+  i = (i + EVENTS.length) % EVENTS.length;
+  const prev = current >= 0 ? EVENTS[current] : null, ev = EVENTS[i];
+  current = i;
+  // 지구를 돌려 사건 위치를 정면으로
+  const tx = THREE.MathUtils.degToRad(ev.lat), ty = -Math.PI / 2 - THREE.MathUtils.degToRad(ev.lon);
+  let dy = ty - rotY; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  targetRot = { x:tx, y:rotY + dy }; velX = velY = 0;
+  targetZoom = 2.4;
+  if (prev && prev !== ev) startArc(prev, ev);
+  markers.forEach((m, k) => m.target = k === i ? 1 : 0);
+  // 카드 애니메이션
+  card.classList.remove('show'); void card.offsetWidth;
+  card.style.borderTopColor = eraCss(ev.y); yearEl.style.color = eraCss(ev.y);
+  document.getElementById('name').textContent = ev.name;
+  document.getElementById('place').textContent = ev.place;
+  document.getElementById('desc').textContent = ev.desc;
+  card.classList.add('show');
+  yearAnim = { from:shownYear, to:ev.y, t:0 };
+  [...dotsEl.children].forEach((d, k) => d.classList.toggle('on', k === i));
+  if (navigator.vibrate) navigator.vibrate(12);
+}
+
+// ---------- 역사 여행 (자동 순회) ----------
+let tourTimer = null;
+const playBtn = document.getElementById('play');
+function startTour() { playBtn.textContent = '멈춤'; select(current + 1); tourTimer = setInterval(() => select(current + 1), 5200); }
+function stopTour() { if (!tourTimer) return; clearInterval(tourTimer); tourTimer = null; playBtn.textContent = '역사 여행 시작'; }
+playBtn.onclick = () => tourTimer ? stopTour() : startTour();
+document.getElementById('prev').onclick = () => { stopTour(); select(current - 1); };
+document.getElementById('next').onclick = () => { stopTour(); select(current + 1); };
+
+// ---------- 화면 크기 ----------
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.fov = camera.aspect < 1 ? 52 : 40;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+// ---------- 메인 루프 ----------
+const clock = new THREE.Clock();
+let clouds, intro = 0;
+function loop() {
+  const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
+
+  // 등장 연출: 멀리서 빙글 돌며 다가옴
+  if (intro < 1) { intro = Math.min(1, intro + dt / 2.6); const e = 1 - Math.pow(1 - intro, 3); camera.position.z = THREE.MathUtils.lerp(14, zoom, e); rotY -= dt * (1 - e) * 2.2; }
+  else camera.position.z += (zoom - camera.position.z) * .15;
+
+  if (targetRot) {
+    rotX += (targetRot.x - rotX) * .06; rotY += (targetRot.y - rotY) * .06;
+  } else if (!pointers.size) {
+    rotY += velY; rotX = THREE.MathUtils.clamp(rotX + velX, -1.3, 1.3);
+    velX *= .93; velY *= .93;
+    if (performance.now() - lastInteract > 6000 && current < 0) rotY += dt * .08;   // 쉬는 동안 천천히 자전
+  }
+  zoom += (targetZoom - zoom) * .08;
+  globe.rotation.set(rotX, rotY, 0);
+  if (clouds) clouds.rotation.y += dt * .01;
+
+  markers.forEach(m => {
+    const sel = m.target === 1;
+    m.rings.forEach(r => {
+      const p = ((t * (sel ? .9 : .45) + m.phase + r.userData.offset) % 1);
+      r.scale.setScalar(.01 + p * (sel ? .16 : .07));
+      r.material.opacity = (1 - p) * (sel ? .9 : .5);
+    });
+    m.dot.scale.setScalar((sel ? .11 : .065) * (1 + .15 * Math.sin(t * 4 + m.phase * 6)));
+    m.beamH += ((sel ? .32 : 0) - m.beamH) * .07;
+    m.beam.scale.set(1, 1, Math.max(m.beamH, .0001));
+    m.beam.material.opacity = .55 + .3 * Math.sin(t * 6);
+  });
+
+  if (arc) {
+    arc.t += dt / arc.dur;
+    const p = Math.min(arc.t, 1), e = 1 - Math.pow(1 - p, 2), n = Math.max(2, Math.floor(e * ARC_N));
+    arcGeo.setDrawRange(0, n);
+    const pos = arcGeo.attributes.position; comet.position.set(pos.getX(n - 1), pos.getY(n - 1), pos.getZ(n - 1));
+    if (arc.t > 1) arcLine.material.opacity = Math.max(0, 1 - (arc.t - 1) * 1.5);
+    else arcLine.material.opacity = .9;
+    comet.visible = arc.t < 1;
+    if (arc.t > 1.7) { arc = null; arcLine.visible = false; }
+  }
+
+  if (yearAnim) {
+    yearAnim.t = Math.min(1, yearAnim.t + dt / 1.1);
+    const e = 1 - Math.pow(1 - yearAnim.t, 3);
+    shownYear = yearAnim.from + (yearAnim.to - yearAnim.from) * e;
+    yearEl.textContent = fmtYear(shownYear);
+    if (yearAnim.t >= 1) { shownYear = yearAnim.to; yearAnim = null; }
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+// ---------- 시작 ----------
+(async () => {
+  try {
+    earthMesh = await buildEarth();
+    clouds = buildClouds(); buildAtmosphere(); buildMarkers();
+    const l = document.getElementById('loading'); l.style.opacity = 0; setTimeout(() => l.remove(), 800);
+    clock.start(); loop();
+  } catch (err) {
+    document.getElementById('loading').textContent = '지도를 불러오지 못했어요: ' + err.message;
+  }
+})();
 </script>
 </body>
 </html>
