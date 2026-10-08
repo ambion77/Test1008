@@ -23,6 +23,15 @@ jobs:
       - name: Install
         run: npm install
 
+      - name: Copy libraries into app (offline use)
+        run: |
+          mkdir -p www/lib
+          cp node_modules/three/build/three.module.js www/lib/
+          cp node_modules/three/build/three.core.js www/lib/
+          cp node_modules/d3/dist/d3.min.js www/lib/
+          cp node_modules/topojson-client/dist/topojson-client.min.js www/lib/
+          cp node_modules/world-atlas/land-50m.json www/lib/
+
       - name: Create Android project
         run: |
           npx cap add android
